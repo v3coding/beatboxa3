@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <string.h>
 #include <stdint.h>
 #include <fcntl.h>
 #include <linux/i2c-dev.h>
@@ -64,25 +65,75 @@ static unsigned char readI2cReg(int i2cFileDesc, unsigned char regAddr){
     return value;
 }
 
-
 void* monitorAccelerometer(void* args){
     printf("Monitor Accelerometer Thread Started\n");
     threadController* threadData = (threadController*) args;
 
-    unsigned char buff[50];
-    memset(buff,0,sizeof(buff));
+    unsigned char buffx[9];
+    unsigned char buffy[9];
+    unsigned char buffz[9];
+    memset(buffx,0,sizeof(buffx));
+    memset(buffy,0,sizeof(buffy));
+    memset(buffz,0,sizeof(buffz));
+
+    int xhit = 0;
+    int yhit = 0;
+    int zhit = 0;
 
     while(threadData->programRunning){
        // threadData->Ax = readI2cReg(threadData->i2cFileDesc,AxL);
        // threadData->Ay = readI2cReg(threadData->i2cFileDesc,AyL);
        // threadData->Ax = readI2cReg(threadData->i2cFileDesc,AzL);
        
-       *buff = readI2cReg(threadData->i2cFileDesc,READADDR);
-       int16_t x = (buff[0] << 8) | (buff[15]);
-       int16_t y = (buff[16] << 8) | (buff[32]);
-       int16_t z = (buff[32] << 8) | (buff[49]);
-       printf("x = %d, y = %d, z = %d\n",x,y,z);
-        sleep(1.0);
+       *buffx = readI2cReg(threadData->i2cFileDesc,0x28);
+       *(buffx + 4) = readI2cReg(threadData->i2cFileDesc,0x29);
+       
+       *buffy = readI2cReg(threadData->i2cFileDesc,0x2A);
+       *(buffy + 4) = readI2cReg(threadData->i2cFileDesc,0x2B);
+       
+       *buffz = readI2cReg(threadData->i2cFileDesc,0x2C);
+       *(buffz + 4) = readI2cReg(threadData->i2cFileDesc,0x2D);
+
+        int16_t x = (buffx[4] << 8) | (buffx[0]);
+        int16_t y = (buffy[4] << 8) | (buffy[0]);
+        int16_t z = (buffz[4] << 8) | (buffz[0]);
+
+
+        if(z > 31000 || z < -10000){
+           // printf("Hit Z\n");
+            zhit = 1;
+            //threadData->hitZ = 1;
+        }
+        if(x > 28000 || x < -28000){
+            //printf("Hit X\n");
+            xhit = 1;
+            //threadData->hitX = 1;
+        }
+        if(y > 28000 || y < -28000){
+           // printf("Hit Y\n");
+            yhit = 1;
+            //threadData->hitY = 1;
+        }
+
+        if((z < 17000 && z > 15000) && zhit){
+            zhit = 0;
+            threadData->hitZ = 1;
+        }
+
+        if((x < 2000 && x > -2000) && xhit){
+            xhit = 0;
+            threadData->hitX = 1;
+        }
+
+        if((y < 2000 && y > -2000) && yhit){
+            yhit = 0;
+            threadData->hitY = 1;
+        }
+
+        //printf("x = %d y = %d z = %d\n",x,y,z);
+
+
+        sleep(0.4);
     }
     pthread_exit(0);
 }
@@ -92,8 +143,19 @@ void* printData(void* args){
     threadController* threadData = (threadController*) args;
 
     while(threadData->programRunning){
-      //  printf("Ax = %u  Ay = %u  Az = %u\n", threadData->Ax, threadData->Ay, threadData->Az);
-        sleep(1);
+      if(threadData->hitX){
+        printf("Hit X\n");
+        threadData->hitX = 0;
+      }
+      if(threadData->hitY){
+        printf("Hit Y\n");
+        threadData->hitY = 0;
+      }
+      if(threadData->hitZ){
+        printf("Hit Z\n");
+        threadData->hitZ = 0;
+      }
+        sleep(0.4);
     }
     pthread_exit(0);
 }

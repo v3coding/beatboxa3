@@ -2,12 +2,12 @@
 #include <stdlib.h>
 #include <pthread.h>
 typedef struct threadController{
-    //Value of X acceleration component
-    unsigned char Ax;
-    //Value of Y acceleration component
-    unsigned char Ay;
-    //Value of Z acceleration component
-    unsigned char Az;
+    //Hit on X
+    int hitX;
+    //Hit on Y
+    int hitY;
+    //Hit on Z
+    int hitZ;
     //boolean int to control startup and shutdown of threads
     int programRunning;
     //array of thread ID's
