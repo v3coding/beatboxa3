@@ -158,21 +158,32 @@ void* printData(void* args){
     printf("Print Data Thread Started\n");
     threadController* threadData = (threadController*) args;
 
+    snd_pcm_t *handle = Audio_openDevice();
+	wavedata_t sampleFile;
+	Audio_readWaveFileIntoMemory(SOURCE_FILE, &sampleFile);
+
     while(threadData->programRunning){
       if(threadData->hitX){
         printf("Hit X\n");
+        Audio_playFile(handle, &sampleFile);
         threadData->hitX = 0;
       }
       if(threadData->hitY){
         printf("Hit Y\n");
+        Audio_playFile(handle, &sampleFile);
         threadData->hitY = 0;
       }
       if(threadData->hitZ){
         printf("Hit Z\n");
+        Audio_playFile(handle, &sampleFile);
         threadData->hitZ = 0;
       }
-        sleep(0.4);
+        sleep(0.1);
     }
+    snd_pcm_drain(handle);
+	snd_pcm_hw_free(handle);
+	snd_pcm_close(handle);
+	free(sampleFile.pData);
     pthread_exit(0);
 }
 
