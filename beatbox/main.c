@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include "functions.h"
+#include "audioMixer_template.h"
 
 int main(){
     threadController* threadArguments = (threadController*) malloc(sizeof(threadController));
@@ -12,3 +13,7 @@ int main(){
     free(threadArguments);
     return 0;
 }
+
+// int main(){
+//     AudioMixer_init();
+// }

@@ -16,11 +16,14 @@
 
 #include <linux/i2c.h>
 #include "functions.h"
+#include "audioMixer_template.h"
 
 #define I2CDRV_LINUX_BUS0 "/dev/i2c-0"
 #define I2CDRV_LINUX_BUS1 "/dev/i2c-1"
 #define I2CDRV_LINUX_BUS2 "/dev/i2c-2"
 #define I2C_DEVICE_ADDRESS 0x18
+
+#define SOURCE_FILE "wave-files/100060__menegass__gui-drum-splash-hard.wav"
 
 #define REG_TURN_ON_ACCEL 0x20
 #define READADDR 0xA8
@@ -73,7 +76,7 @@ static unsigned char readI2cReg(int i2cFileDesc, unsigned char regAddr){
     return value;
 }
 
-void* playSound(void* args){
+void* printData(void* args){
     threadController* threadData = (threadController*) args;
     while(threadData->programRunning){
         sleep(0.2);
@@ -154,36 +157,38 @@ void* monitorAccelerometer(void* args){
     pthread_exit(0);
 }
 
-void* printData(void* args){
+void* playSound(void* args){
     printf("Print Data Thread Started\n");
     threadController* threadData = (threadController*) args;
 
-    snd_pcm_t *handle = Audio_openDevice();
-	wavedata_t sampleFile;
-	Audio_readWaveFileIntoMemory(SOURCE_FILE, &sampleFile);
+    wavedata_t sampleFile;
+
+    AudioMixer_init();
+    AudioMixer_readWaveFileIntoMemory(SOURCE_FILE, &sampleFile);
+
+
+
 
     while(threadData->programRunning){
       if(threadData->hitX){
         printf("Hit X\n");
-        Audio_playFile(handle, &sampleFile);
+        AudioMixer_queueSound(&sampleFile);
         threadData->hitX = 0;
       }
       if(threadData->hitY){
+        AudioMixer_queueSound(&sampleFile);
         printf("Hit Y\n");
-        Audio_playFile(handle, &sampleFile);
         threadData->hitY = 0;
       }
       if(threadData->hitZ){
+        AudioMixer_queueSound(&sampleFile);
         printf("Hit Z\n");
-        Audio_playFile(handle, &sampleFile);
         threadData->hitZ = 0;
       }
-        sleep(0.1);
+      sleep(0.1);
     }
-    snd_pcm_drain(handle);
-	snd_pcm_hw_free(handle);
-	snd_pcm_close(handle);
-	free(sampleFile.pData);
+    AudioMixer_cleanup();
+    AudioMixer_freeWaveFileData(&sampleFile);
     pthread_exit(0);
 }
 
@@ -206,97 +211,6 @@ void runCommand(char* command)
         printf(" command: %s\n", command);
         printf(" exit code: %d\n", exitCode);
     }
-}
-
-// Open the PCM audio output device and configure it.
-// Returns a handle to the PCM device; needed for other actions.
-snd_pcm_t *Audio_openDevice()
-{
-	snd_pcm_t *handle;
-
-	// Open the PCM output
-	int err = snd_pcm_open(&handle, "default", SND_PCM_STREAM_PLAYBACK, 0);
-	if (err < 0) {
-		printf("Play-back open error: %s\n", snd_strerror(err));
-		exit(EXIT_FAILURE);
-	}
-
-	// Configure parameters of PCM output
-	err = snd_pcm_set_params(handle,
-			SND_PCM_FORMAT_S16_LE,
-			SND_PCM_ACCESS_RW_INTERLEAVED,
-			NUM_CHANNELS,
-			SAMPLE_RATE,
-			1,			// Allow software resampling
-			50000);		// 0.05 seconds per buffer
-	if (err < 0) {
-		printf("Play-back configuration error: %s\n", snd_strerror(err));
-		exit(EXIT_FAILURE);
-	}
-
-	return handle;
-}
-
-// Read in the file to dynamically allocated memory.
-// !! Client code must free memory in wavedata_t !!
-void Audio_readWaveFileIntoMemory(char *fileName, wavedata_t *pWaveStruct)
-{
-	assert(pWaveStruct);
-
-	// Wave file has 44 bytes of header data. This code assumes file
-	// is correct format.
-	const int DATA_OFFSET_INTO_WAVE = 44;
-
-	// Open file
-	FILE *file = fopen(fileName, "r");
-	if (file == NULL) {
-		fprintf(stderr, "ERROR: Unable to open file %s.\n", fileName);
-		exit(EXIT_FAILURE);
-	}
-
-	// Get file size
-	fseek(file, 0, SEEK_END);
-	int sizeInBytes = ftell(file) - DATA_OFFSET_INTO_WAVE;
-	fseek(file, DATA_OFFSET_INTO_WAVE, SEEK_SET);
-	pWaveStruct->numSamples = sizeInBytes / SAMPLE_SIZE;
-
-	// Allocate Space
-	pWaveStruct->pData = malloc(sizeInBytes);
-	if (pWaveStruct->pData == NULL) {
-		fprintf(stderr, "ERROR: Unable to allocate %d bytes for file %s.\n",
-				sizeInBytes, fileName);
-		exit(EXIT_FAILURE);
-	}
-
-	// Read data:
-	int samplesRead = fread(pWaveStruct->pData, SAMPLE_SIZE, pWaveStruct->numSamples, file);
-	if (samplesRead != pWaveStruct->numSamples) {
-		fprintf(stderr, "ERROR: Unable to read %d samples from file %s (read %d).\n",
-				pWaveStruct->numSamples, fileName, samplesRead);
-		exit(EXIT_FAILURE);
-	}
-
-	fclose(file);
-}
-
-// Play the audio file (blocking)
-void Audio_playFile(snd_pcm_t *handle, wavedata_t *pWaveData)
-{
-	// If anything is waiting to be written to screen, can be delayed unless flushed.
-	fflush(stdout);
-
-	// Write data and play sound (blocking)
-	snd_pcm_sframes_t frames = snd_pcm_writei(handle, pWaveData->pData, pWaveData->numSamples);
-
-	// Check for errors
-	if (frames < 0)
-		frames = snd_pcm_recover(handle, frames, 0);
-	if (frames < 0) {
-		fprintf(stderr, "ERROR: Failed writing audio with snd_pcm_writei(): %li\n", frames);
-		exit(EXIT_FAILURE);
-	}
-	if (frames > 0 && frames < pWaveData->numSamples)
-		printf("Short write (expected %d, wrote %li)\n", pWaveData->numSamples, frames);
 }
 
 void startProgram(threadController* threadArgument){

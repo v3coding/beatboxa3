@@ -49,6 +49,10 @@ void AudioMixer_init(void)
 {
 	AudioMixer_setVolume(DEFAULT_VOLUME);
 
+	for(int i = 0; i < MAX_SOUND_BITES; i++){
+		soundBites[i].pSound = NULL;
+	}
+
 	// Initialize the currently active sound-bites being played
 	// REVISIT:- Implement this. Hint: set the pSound pointer to NULL for each
 	//     sound bite.
@@ -141,6 +145,35 @@ void AudioMixer_queueSound(wavedata_t *pSound)
 	// Ensure we are only being asked to play "good" sounds:
 	assert(pSound->numSamples > 0);
 	assert(pSound->pData);
+	int full = 1;
+	int insertingIndex = 0;
+
+	pthread_mutex_lock(&audioMutex);
+
+	for(int i = 0; i < MAX_SOUND_BITES; i++){
+		if(soundBites[i].pSound == NULL){
+			full = 0;
+			insertingIndex = i;
+			i = MAX_SOUND_BITES;
+		}
+	}
+
+	if(full == 0){
+		soundBites[insertingIndex].pSound = pSound;
+	}
+
+	pthread_mutex_unlock(&audioMutex);
+
+	if(full == 1){
+		printf("AudioMixer_queueSound error -- soundBites buffer is full!\n");
+		printf("Buffer is sized %d\n", MAX_SOUND_BITES);
+
+		for(int i = 0; i < MAX_SOUND_BITES; i++){
+			printf("soundBites %d is at location %d of indices %d\n",i,soundBites[i].location,soundBites[i].pSound->numSamples);
+		}
+	}
+
+
 
 	// Insert the sound by searching for an empty sound bite spot
 	/*
@@ -232,6 +265,76 @@ void AudioMixer_setVolume(int newVolume)
 //    `size`: the number of values to store into playbackBuffer
 static void fillPlaybackBuffer(short *buff, int size)
 {
+
+	for(int i = 0; i < size; i++){
+		playbackBuffer[i] = 0;
+	}
+
+	pthread_mutex_lock(&audioMutex);
+
+
+	int playbackBufferIterator = 0;
+	int end = 0;
+
+	short bufferVal = 0;
+	short soundByteVal = 0;
+	short insertingVal = 0;
+
+	int locationIterator = 0;
+
+	//for each soundBite in the Soundbites array
+	for(int i = 0; i < MAX_SOUND_BITES; i++){
+
+		//if the soundBite is not NULL (it exists)
+		if(soundBites[i].pSound != NULL){
+			locationIterator = soundBites[i].location;
+			//printf("inserting sound from soundBites[%d] to playbackBuffer\n",i);
+
+			//figure out where to end iteration through soundBites and playbackBuffer (whichever is shorter, we will stop there first)
+			if(soundBites[i].pSound->numSamples - locationIterator > size){
+				end = size;
+			}
+			else{
+				end = soundBites[i].pSound->numSamples - locationIterator;
+			}
+
+			//Iterating through the soundbite at soundbite[i], until the end (determined above, whichever is shortest either the buffer length or the soundbite lengh)
+			//the soundbite is at soundBite[i].pSound->pData[j], and we are iterating through it from its start at soundBites[i].location, to the end, and adding it to the playback buffer
+			for(int j = 0; j < end; j++){
+				bufferVal = playbackBuffer[playbackBufferIterator];
+				soundByteVal = soundBites[i].pSound->pData[locationIterator];	
+
+				if((bufferVal + soundByteVal) > SHRT_MAX){
+					insertingVal = SHRT_MAX;
+				} else if((bufferVal + soundByteVal) < SHRT_MIN){
+					insertingVal = SHRT_MIN;
+				} else{
+					insertingVal = bufferVal + soundByteVal;
+					//insertingVal = soundByteVal;
+				}
+
+				playbackBuffer[playbackBufferIterator] = insertingVal;
+				playbackBufferIterator++;
+				soundBites[i].location++;
+				locationIterator++;
+				//printf("Location : %d\n",soundBites[i].location);
+			}
+			playbackBufferIterator = 0;
+			insertingVal = 0;
+			
+			//free sound if its now fully played 
+			//printf("soundBites[i].location = %d, soundBites[i].pSound->numSamples = %d\n",soundBites[i].location,soundBites[i].pSound->numSamples);
+			if((soundBites[i].location) == soundBites[i].pSound->numSamples){
+				soundBites[i].location = 0;
+				soundBites[i].pSound = NULL;
+			}
+		}
+	}
+	pthread_mutex_unlock(&audioMutex);
+}
+
+
+
 	/*
 	 * REVISIT: Implement this
 	 * 1. Wipe the playbackBuffer to all 0's to clear any previous PCM data.
@@ -259,8 +362,8 @@ static void fillPlaybackBuffer(short *buff, int size)
 	 *     a struct inside an array, it may be faster to first load the value into a local
 	 *      variable, increment this variable as needed throughout the loop, and then write it
 	 *     back into the struct inside the array after. For example:
-	 *           int offset = myArray[someIdx].value;
-	 *           for (int i =...; i < ...; i++) {
+	 *           int offsex].value;
+	 *           for (int i =...; i < t = myArray[someId...; i++) {
 	 *               offset ++;
 	 *           }
 	 *           myArray[someIdx].value = offset;
@@ -275,11 +378,6 @@ static void fillPlaybackBuffer(short *buff, int size)
 
 
 
-
-
-
-
-}
 
 
 void* playbackThread(void* arg)
