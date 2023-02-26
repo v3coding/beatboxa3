@@ -35,6 +35,12 @@ typedef struct threadController{
     pthread_t* threadIDs;
     //i2c file desc
     int i2cFileDesc;
+    //drum mode
+    int mode;
+    //audio volume
+    int volume;
+    //tempo
+    int tempo;
 } threadController;
 
 void startProgram(threadController* threadArgument);
